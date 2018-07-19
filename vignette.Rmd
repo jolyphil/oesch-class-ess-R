@@ -1,0 +1,106 @@
+---
+title: "How to apply Oesch's class schema on data from the European Social Survey (ESS) using R"
+author: "Philippe Joly, Humboldt-Universität zu Berlin & WZB Berlin Social Science Center"
+date: "July 2018"
+output:
+  html_document:
+    includes:
+      before_body: doc_prefix.html
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+
+[Daniel Oesch](http://people.unil.ch/danieloesch/) (University of Lausanne) has developped a schema of social classes, which he discusses and applies in different publications (see Oesch 2006a, 2006b). On his personnal website, he offers [Stata, SPSS, and SAS scripts](http://people.unil.ch/danieloesch/scripts/) to generate the class schema with data from different surveys.
+
+Scholars working with other programs (especially R) might be interested in using Oesch's class schema as well. In this vignette, I show how to apply Oesch's class schema on data from the European Social Survey (ESS) using R.
+
+Rather than preparing an R script that would generate the class variables directly from the raw ESS data, my strategy is the following:
+
+1. We assemble all the ESS data (waves 1 to 8) into an aggregated database.
+2. We execute the _Stata_ scripts on this database.
+3. We extract extract a few variables: the respondent number (`idno`), the country (`cntry`), the survey wave (`essround`) and the class variables.
+4. We save this minimum database in CSV format.
+5. We merge this CSV file with the raw ESS data in R.
+
+Steps 1 to 4 are documented in a [GitHub repository](https://github.com/jolyphil/oesch-class), which also contains the final CSV file.
+
+Here, I will focus on the last step and demonstrate how anyone can now download the CSV file and merge it with the ESS raw data in R.
+
+## Load the necessary packages
+
+In R, we start by loading the necessary packages for this demonstration (if needed, install them with `install.packages`).
+
+```{r load_packages, message = FALSE}
+# install.packages("dplyr")
+# install.packages("essurvey")
+# install.packages("magrittr")
+# install.packages("RCurl")
+
+library(dplyr) # Used for data wrangling
+library(essurvey) # Downloads main ESS datafiles
+library(magrittr) # Allows pipe operator
+library(RCurl) # Downloads files from the web
+```
+
+## Import the ESS integrated file
+
+We take advantage of the `essurvey` package, which allows downloading the ESS integrated files, directly from the ESS website. Save your ESS email as an environment variable with the `essurvey::set_email` function (make sure to register your email on the ESS website beforehand).
+
+```{r set_ess_email} 
+#set_email("your@email.com")
+```
+
+We import the ESS raw data using the `essurvey::import_rounds` function. For the sake of this demonstration, we will only download the eighth round of the ESS, but the demonstration would work with any round.
+
+```{r import_ess_raw, message = FALSE, results='hide'} 
+#set_email("your@email.com")
+ess8 <- import_rounds(8)
+```
+
+## Import the CSV file with class variables
+
+The CSV file with the class variables is stored on GitHub. We save the URL of the CSV file in an object called `url`. 
+
+```{r save_url} 
+url <- "https://raw.githubusercontent.com/jolyphil/" %>% 
+  paste0("oesch-class/master/data/oesch_class_ess_1-8.csv")
+
+```
+
+We import the CSV file from the web using `RCurl:getURL` and load it as a dataframe called `classvar`. This dataset contains observations for _all_ the rounds of the ESS. We need to convert the variables `idno` and `essround` from integer to numeric to merge the data later.
+
+```{r import_csv} 
+classvar <- url %>%
+  getURL() %>%
+  read.csv(text = .) %>%
+  mutate(idno = as.numeric(idno), # Convert to numeric to allow merge
+         essround = as.numeric(essround))
+
+```
+
+## Merge the ESS integrated file and the class variables
+
+Finally, we merge the ESS raw data (`ess8`) and the class variables (`classvar`) using the respondent number (`idno`), the country (`cntry`), and the survey wave (`essround`) as keys.
+
+```{r join, message = FALSE, warning=FALSE} 
+finaldata <- ess8 %>%
+  left_join(classvar, by = c("idno", "cntry", "essround"))
+```
+
+`finaldata` now contains the original variables of the ESS together with Oesch's class variables. 
+
+```{r display} 
+finaldata %>%
+  select(idno, cntry, essround, gndr, agea, class5, class8, class16)
+```
+
+
+## References
+
+* Oesch, Daniel. 2006a. "Coming to Grips with a Changing Class Structure: An Analysis of Employment Stratification in Britain, Germany, Sweden and Switzerland." _International Sociology_ 21(2):263-88.
+* Oesch, Daniel. 2006b. _Redrawing the Class Map: Stratification and Institutions in Britain, Germany, Sweden and Switzerland_. Houndmills, Basingstoke, Hampshire: Palgrave Macmillan.
